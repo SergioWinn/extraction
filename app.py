@@ -80,7 +80,7 @@ with tab_validate:
     
     with col_upload:
         st.subheader("Input Aset Gambar")
-        uploaded_file = st.file_uploader("Seret dan lepas file gambar ke sini...", type=["jpg", "jpeg", "png"])
+        uploaded_file = st.file_uploader("Seret dan lepas file gambar ke sini...", type=["jpg", "jpeg", "png", "webp"])
         
         if uploaded_file:
             st.image(uploaded_file, caption="Pratinjau Gambar Utama", use_container_width=True)
