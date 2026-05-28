@@ -114,24 +114,27 @@ with tab_validate:
                     start_time = time.time()
                     payload = {"image_url": public_url, "image_type": selected_type, "model_name": selected_model}
                     
-                    # Logika Pemisahan URL
                     if "Qwen" in selected_model:
-                        target_url = BACKEND_API_URL_QWEN
+                        target_url = st.secrets.get("BACKEND_API_URL_QWEN", BACKEND_API_URL_QWEN)
                     else:
-                        target_url = BACKEND_API_URL_INTERN
+                        target_url = st.secrets.get("BACKEND_API_URL_INTERN", BACKEND_API_URL_INTERN)
                     
                     try:
                         response = requests.post(target_url, json=payload, timeout=150)
                         
-                        # TAMBAHAN BARU: Baca pesan error asli dari GPU jika 500
+                        # Tangkap Error Backend (OOM/Typo di Server GPU)
                         if response.status_code == 500:
                             err_data = response.json()
+                            status.update(label="Terjadi Error di Server GPU!", state="error")
                             st.error("💥 Backend Error Traceback:")
                             st.code(err_data.get("traceback", "No traceback provided."))
                             st.stop()
                             
                         response.raise_for_status()
                         backend_response = response.json()
+                        
+                        # INI DIA VARIABEL YANG HILANG TADI:
+                        execution_time = round(time.time() - start_time, 2)
                         
                         # 3. Parsing JSON & Save to DB
                         status.write("💾 Menyimpan ke database...")
@@ -155,7 +158,7 @@ with tab_validate:
                         
                         status.update(label=f"Selesai dalam {execution_time} detik!", state="complete", expanded=False)
                         
-                        st.metric(label="Waktu Inferensi", value=f"{execution_time} Detik")
+                        st.metric(label="Waktu Inferensi + Loading Model", value=f"{execution_time} Detik")
                         st.success("Tersimpan di Riwayat Pengecekan!")
                         st.json(parsed_json)
                         
