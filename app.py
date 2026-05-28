@@ -13,30 +13,28 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Memuat kredensial dari Streamlit Secrets
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     BACKEND_API_URL = st.secrets["BACKEND_API_URL"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    st.error("Gagal memuat Streamlit Secrets. Pastikan Anda sudah mengonfigurasinya di dashboard Streamlit Cloud.")
+    st.error("Gagal memuat Streamlit Secrets.")
     st.stop()
 
-# Mapping tipe gambar dan deskripsinya berdasarkan aturan bisnis proyek
 IMAGE_TYPE_MAPPING = {
     "FTTH (Fiber to the Home)": {
-        "ikr_homepass": "Foto rumah pelanggan dari luar (fasad penuh)[cite: 85].",
-        "ikr_modempass": "Foto bagian belakang/label modem ONT (Ekstraksi SN/MAC)[cite: 85].",
-        "ikr_odppass": "Foto ODP tampak depan yang memperlihatkan kode ODP[cite: 85].",
-        "ikr_speedtest": "Screenshot hasil speedtest dengan nama ISP terlihat[cite: 85].",
-        "opm_redaman": "Foto display alat ukur Optical Power Meter (Kritis: >= -21 dBm)[cite: 85].",
-        "ont_redaman": "Foto hasil pengukuran redaman optik langsung dari sistem perangkat[cite: 85]."
+        "ikr_homepass": "Foto rumah pelanggan dari luar (fasad penuh).",
+        "ikr_modempass": "Foto bagian belakang/label modem ONT (Ekstraksi SN/MAC).",
+        "ikr_odppass": "Foto ODP tampak depan yang memperlihatkan kode ODP.",
+        "ikr_speedtest": "Screenshot hasil speedtest dengan nama ISP terlihat.",
+        "opm_redaman": "Foto display alat ukur Optical Power Meter (Kritis: >= -21 dBm).",
+        "ont_redaman": "Foto hasil pengukuran redaman optik langsung dari sistem perangkat."
     },
     "FWA (Fixed Wireless Access)": {
-        "receiver_link": "Foto penerima bersama paket atau produk yang diterima[cite: 85].",
-        "modem_back_link": "Foto label package FWA untuk ekstraksi IMEI/ICCID[cite: 85].",
-        "house_link": "Foto rumah FWA dari luar untuk identifikasi lokasi gedung[cite: 85]."
+        "receiver_link": "Foto penerima bersama paket atau produk yang diterima.",
+        "modem_back_link": "Foto label package FWA untuk ekstraksi IMEI/ICCID.",
+        "house_link": "Foto rumah FWA dari luar untuk identifikasi lokasi gedung."
     }
 }
 
@@ -50,8 +48,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("1. Pilih Model VLM")
 selected_model = st.sidebar.radio(
     "Model yang aktif di GPU A30:",
-    ("Qwen2.5-VL-7B-Instruct", "InternVL3-8B"),
-    help="Backend akan melakukan swap VRAM otomatis jika Anda mengganti model[cite: 29, 46, 96]."
+    ("Qwen2.5-VL-7B-Instruct", "InternVL3-8B")
 )
 
 st.sidebar.subheader("2. Kategori Teknologi")
@@ -61,110 +58,132 @@ st.sidebar.subheader("3. Tipe Gambar Validasi")
 available_types = IMAGE_TYPE_MAPPING[tech_category]
 selected_type = st.sidebar.selectbox(
     "Pilih Image Type:", 
-    list(available_types.keys()),
-    format_func=lambda x: f"{x}"
+    list(available_types.keys())
 )
 
-# Tampilkan deskripsi aturan bisnis di sidebar
-st.sidebar.info(f"**Deskripsi Tipe:** {available_types[selected_type]}")
+st.sidebar.info(f"**Deskripsi:** {available_types[selected_type]}")
 
 # ==========================================
-# 3. MAIN CONTENT AREA
+# 3. MAIN CONTENT AREA (TABS)
 # ==========================================
 st.header("📸 Pipeline Validasi Otomatis Gambar")
-st.markdown("Unggah foto lapangan untuk membandingkan performa ekstraksi terstruktur model VLM lokal.")
 
-# Layout kolom untuk upload dan preview
-col_upload, col_result = st.columns([1, 1])
+# Membuat dua tab terpisah
+tab_validate, tab_history = st.tabs(["🔍 Validasi Baru", "📜 Riwayat Pengecekan"])
 
-with col_upload:
-    st.subheader("Input Aset Gambar")
-    uploaded_file = st.file_uploader(
-        "Seret dan lepas file gambar ke sini...", 
-        type=["jpg", "jpeg", "png"],
-        help="Gambar akan diunggah otomatis ke Supabase Storage Bucket."
-    )
+# ------------------------------------------
+# TAB 1: VALIDASI BARU
+# ------------------------------------------
+with tab_validate:
+    st.markdown("Unggah foto lapangan untuk membandingkan performa ekstraksi terstruktur model VLM lokal.")
+    col_upload, col_result = st.columns([1, 1])
     
-    if uploaded_file:
-        st.image(uploaded_file, caption="Pratinjau Gambar Utama", use_container_width=True)
-
-with col_result:
-    st.subheader("Output Hasil Analisis VLM")
-    
-    if not uploaded_file:
-        st.warning("Silakan unggah gambar di sebelah kiri untuk memulai pengujian.")
-    else:
-        # Tombol Eksekusi
-        if st.button("🚀 Jalankan Ekstraksi & Validasi", type="primary", use_container_width=True):
+    with col_upload:
+        st.subheader("Input Aset Gambar")
+        uploaded_file = st.file_uploader("Seret dan lepas file gambar ke sini...", type=["jpg", "jpeg", "png"])
+        
+        if uploaded_file:
+            st.image(uploaded_file, caption="Pratinjau Gambar Utama", use_container_width=True)
             
-            with st.status("Menjalankan pipeline validasi...", expanded=True) as status:
-                
-                # --- LANGKAH 1: Unggah ke Supabase Storage ---
-                status.write("📤 Mengunggah gambar ke Supabase Storage...")
-                file_bytes = uploaded_file.getvalue()
-                # Berikan nama unik menggunakan timestamp agar tidak menimpa file lama
-                unique_filename = f"{int(time.time())}_{uploaded_file.name}"
-                
-                try:
-                    supabase.storage.from_("vlm-eval-images").upload(unique_filename, file_bytes)
-                    public_url = supabase.storage.from_("vlm-eval-images").get_public_url(unique_filename)
-                except Exception as storage_err:
-                    status.update(label="Gagal mengunggah gambar ke Storage!", state="error")
-                    st.error(f"Detail Error Storage: {storage_err}")
-                    st.stop()
-                
-                # --- LANGKAH 2: Kirim Payload ke FastAPI Server GPU ---
-                status.write(f"🤖 Mengirim perintah ke Server GPU A30 ({selected_model})...")
-                start_time = time.time()
-                
-                payload = {
-                    "image_url": public_url,
-                    "image_type": selected_type,
-                    "model_name": selected_model
-                }
-                
-                try:
-                    # Timeout disetel agak panjang (150 detik) jika terjadi pemuatan model pertama kali ke VRAM
-                    response = requests.post(BACKEND_API_URL, json=payload, timeout=150)
-                    response.raise_for_status()
+    with col_result:
+        st.subheader("Output Hasil Analisis VLM")
+        
+        if not uploaded_file:
+            st.warning("Silakan unggah gambar di sebelah kiri untuk memulai pengujian.")
+        else:
+            if st.button("🚀 Jalankan Ekstraksi & Validasi", type="primary", use_container_width=True):
+                with st.status("Menjalankan pipeline validasi...", expanded=True) as status:
                     
-                    backend_response = response.json()
-                    execution_time = round(time.time() - start_time, 2)
+                    # 1. Upload ke Supabase
+                    status.write("📤 Mengunggah gambar...")
+                    file_bytes = uploaded_file.getvalue()
+                    unique_filename = f"{int(time.time())}_{uploaded_file.name}"
                     
-                    # --- LANGKAH 3: Simpan Data Log ke Postgres ---
-                    status.write("💾 Mencatat log evaluasi ke database Supabase...")
-                    
-                    # Coba parsing output teks dari model menjadi objek JSON murni jika memungkinkan
                     try:
-                        raw_txt = backend_response.get("raw_output", "{}")
-                        # Bersihkan markdown formatting ```json ... ``` jika model mengembalikannya
-                        if "```json" in raw_txt:
-                            raw_txt = raw_txt.split("```json")[1].split("```")[0].strip()
-                        elif "```" in raw_txt:
-                            raw_txt = raw_txt.split("```")[1].split("```")[0].strip()
+                        supabase.storage.from_("vlm-eval-images").upload(unique_filename, file_bytes)
+                        public_url = supabase.storage.from_("vlm-eval-images").get_public_url(unique_filename)
+                    except Exception as err:
+                        status.update(label="Gagal mengunggah gambar!", state="error")
+                        st.error(err)
+                        st.stop()
+                    
+                    # 2. Hit Backend API
+                    status.write(f"🤖 Inferensi di Server GPU ({selected_model})...")
+                    start_time = time.time()
+                    payload = {"image_url": public_url, "image_type": selected_type, "model_name": selected_model}
+                    
+                    try:
+                        response = requests.post(BACKEND_API_URL, json=payload, timeout=150)
+                        response.raise_for_status()
+                        backend_response = response.json()
+                        execution_time = round(time.time() - start_time, 2)
                         
-                        parsed_json = json.loads(raw_txt)
-                    except Exception:
-                        # Jika gagal parsing, simpan string mentah di dalam objek JSON
-                        parsed_json = {"error_parsing_string": backend_response.get("raw_output")}
+                        # 3. Parsing JSON & Save to DB
+                        status.write("💾 Menyimpan ke database...")
+                        try:
+                            raw_txt = backend_response.get("raw_output", "{}")
+                            if "```json" in raw_txt:
+                                raw_txt = raw_txt.split("```json")[1].split("```")[0].strip()
+                            elif "```" in raw_txt:
+                                raw_txt = raw_txt.split("```")[1].split("```")[0].strip()
+                            parsed_json = json.loads(raw_txt)
+                        except Exception:
+                            parsed_json = {"error_parsing_string": backend_response.get("raw_output")}
+                        
+                        supabase.table("evaluation_logs").insert({
+                            "image_url": public_url,
+                            "image_type": selected_type,
+                            "model_used": selected_model,
+                            "execution_time_seconds": execution_time,
+                            "extracted_data": parsed_json
+                        }).execute()
+                        
+                        status.update(label=f"Selesai dalam {execution_time} detik!", state="complete", expanded=False)
+                        
+                        st.metric(label="Waktu Inferensi", value=f"{execution_time} Detik")
+                        st.success("Tersimpan di Riwayat Pengecekan!")
+                        st.json(parsed_json)
+                        
+                    except Exception as e:
+                        status.update(label="Gagal terhubung dengan Server!", state="error")
+                        st.error(f"Error: {e}")
+
+# ------------------------------------------
+# TAB 2: RIWAYAT PENGECEKAN
+# ------------------------------------------
+with tab_history:
+    st.markdown("Menampilkan **10 hasil validasi terakhir** yang tersimpan di database.")
+    
+    col_refresh, _ = st.columns([1, 4])
+    with col_refresh:
+        # Tombol refresh manual (Streamlit juga akan rerunning otomatis jika ada interaksi lain)
+        st.button("🔄 Segarkan Data")
+        
+    try:
+        # Menarik data dari Supabase, diurutkan dari yang paling baru
+        response = supabase.table("evaluation_logs").select("*").order("created_at", desc=True).limit(10).execute()
+        logs = response.data
+        
+        if not logs:
+            st.info("Belum ada data riwayat pengecekan.")
+        else:
+            # Looping untuk membuat UI Accordion/Expander per log
+            for idx, log in enumerate(logs):
+                # Memformat timestamp agar lebih rapi (mengambil bagian tanggal & jam saja)
+                waktu_eksekusi = log.get('created_at', '')[:19].replace('T', ' ')
+                
+                # Judul Accordion
+                label_expander = f"[{waktu_eksekusi}] {log['image_type']} - {log['model_used']}"
+                
+                with st.expander(label_expander, expanded=(idx==0)): # Hanya log pertama yang otomatis terbuka
+                    col_img, col_data = st.columns([1, 2])
                     
-                    supabase.table("evaluation_logs").insert({
-                        "image_url": public_url,
-                        "image_type": selected_type,
-                        "model_used": selected_model,
-                        "execution_time_seconds": execution_time,
-                        "extracted_data": parsed_json
-                    }).execute()
-                    
-                    # Pembaruan Status Sukses
-                    status.update(label=f"Selesai diproses dalam {execution_time} detik!", state="complete", expanded=False)
-                    
-                    # Tampilkan metrik kecepatan eksekusi
-                    st.metric(label="Waktu Inferensi", value=f"{execution_time} Detik")
-                    
-                    st.success(f"Analisis sukses menggunakan {selected_model}:")
-                    st.json(parsed_json)
-                    
-                except requests.exceptions.RequestException as api_err:
-                    status.update(label="Gagal terhubung dengan Server GPU!", state="error")
-                    st.error(f"Gagal memproses gambar. Pastikan Cloudflare Tunnel Anda aktif di server. \n\n**Detail Error:** {api_err}")
+                    with col_img:
+                        st.image(log['image_url'], use_container_width=True)
+                        st.caption(f"⏱️ Waktu Inferensi: **{log['execution_time_seconds']} dtk**")
+                        
+                    with col_data:
+                        st.json(log['extracted_data'])
+                        
+    except Exception as e:
+        st.error(f"Gagal mengambil data dari database: {e}")
