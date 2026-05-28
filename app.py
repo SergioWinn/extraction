@@ -16,10 +16,13 @@ st.set_page_config(
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    BACKEND_API_URL = st.secrets["BACKEND_API_URL"]
+    # Load 2 URL Tunnel Cloudflare yang berbeda
+    BACKEND_API_URL_QWEN = st.secrets["BACKEND_API_URL_QWEN"]
+    BACKEND_API_URL_INTERN = st.secrets["BACKEND_API_URL_INTERN"]
+    
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    st.error("Gagal memuat Streamlit Secrets.")
+    st.error(f"Gagal memuat Streamlit Secrets. Pastikan nama variabel benar. Error: {e}")
     st.stop()
 
 IMAGE_TYPE_MAPPING = {
@@ -68,7 +71,6 @@ st.sidebar.info(f"**Deskripsi:** {available_types[selected_type]}")
 # ==========================================
 st.header("📸 Pipeline Validasi Otomatis Gambar")
 
-# Membuat dua tab terpisah
 tab_validate, tab_history = st.tabs(["🔍 Validasi Baru", "📜 Riwayat Pengecekan"])
 
 # ------------------------------------------
@@ -107,13 +109,19 @@ with tab_validate:
                         st.error(err)
                         st.stop()
                     
-                    # 2. Hit Backend API
-                    status.write(f"🤖 Inferensi di Server GPU ({selected_model})...")
+                    # 2. Hit Backend API (ROUTER CERDAS)
+                    status.write(f"🤖 Mengirim ke Orkestrator ({selected_model})...")
                     start_time = time.time()
                     payload = {"image_url": public_url, "image_type": selected_type, "model_name": selected_model}
                     
+                    # Logika Pemisahan URL
+                    if "Qwen" in selected_model:
+                        target_url = BACKEND_API_URL_QWEN
+                    else:
+                        target_url = BACKEND_API_URL_INTERN
+                    
                     try:
-                        response = requests.post(BACKEND_API_URL, json=payload, timeout=150)
+                        response = requests.post(target_url, json=payload, timeout=150)
                         response.raise_for_status()
                         backend_response = response.json()
                         execution_time = round(time.time() - start_time, 2)
@@ -156,26 +164,20 @@ with tab_history:
     
     col_refresh, _ = st.columns([1, 4])
     with col_refresh:
-        # Tombol refresh manual (Streamlit juga akan rerunning otomatis jika ada interaksi lain)
         st.button("🔄 Segarkan Data")
         
     try:
-        # Menarik data dari Supabase, diurutkan dari yang paling baru
         response = supabase.table("evaluation_logs").select("*").order("created_at", desc=True).limit(10).execute()
         logs = response.data
         
         if not logs:
             st.info("Belum ada data riwayat pengecekan.")
         else:
-            # Looping untuk membuat UI Accordion/Expander per log
             for idx, log in enumerate(logs):
-                # Memformat timestamp agar lebih rapi (mengambil bagian tanggal & jam saja)
                 waktu_eksekusi = log.get('created_at', '')[:19].replace('T', ' ')
-                
-                # Judul Accordion
                 label_expander = f"[{waktu_eksekusi}] {log['image_type']} - {log['model_used']}"
                 
-                with st.expander(label_expander, expanded=(idx==0)): # Hanya log pertama yang otomatis terbuka
+                with st.expander(label_expander, expanded=(idx==0)):
                     col_img, col_data = st.columns([1, 2])
                     
                     with col_img:
