@@ -122,9 +122,16 @@ with tab_validate:
                     
                     try:
                         response = requests.post(target_url, json=payload, timeout=150)
+                        
+                        # TAMBAHAN BARU: Baca pesan error asli dari GPU jika 500
+                        if response.status_code == 500:
+                            err_data = response.json()
+                            st.error("💥 Backend Error Traceback:")
+                            st.code(err_data.get("traceback", "No traceback provided."))
+                            st.stop()
+                            
                         response.raise_for_status()
                         backend_response = response.json()
-                        execution_time = round(time.time() - start_time, 2)
                         
                         # 3. Parsing JSON & Save to DB
                         status.write("💾 Menyimpan ke database...")
